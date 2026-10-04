@@ -10,6 +10,9 @@ use Migrations\BaseMigration;
  */
 class CreateStoredFiles extends BaseMigration
 {
+    /**
+     * @return void
+     */
     public function change(): void
     {
         $this->table('stored_files')

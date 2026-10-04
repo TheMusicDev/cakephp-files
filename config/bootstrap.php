@@ -15,7 +15,7 @@ use League\Flysystem\Local\LocalFilesystemAdapter;
  */
 $defaults = (require __DIR__ . '/app_default.php')['Files'];
 /** @param string $key @return array<string, mixed> */
-$host = static fn (string $key): array => (array)Configure::read('Files.' . $key, []);
+$host = static fn(string $key): array => (array)Configure::read('Files.' . $key, []);
 
 Configure::write('Files.backends', $host('backends') + $defaults['backends']);
 if ((string)Configure::read('Files.backend') === '') {

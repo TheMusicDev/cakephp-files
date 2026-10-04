@@ -1,0 +1,20 @@
+# Test database for the plugin's own test suite (MariaDB, like production; never sqlite).
+# Port 3309 and database `files_test` so it does not collide with the Seo repo (3308) or an app (3307).
+#   docker compose up -d --wait dbtest && composer test
+services:
+  dbtest:
+    image: mariadb:11.8
+    environment:
+      MYSQL_DATABASE: files_test
+      MYSQL_USER: files
+      MYSQL_PASSWORD: files
+      MYSQL_ROOT_PASSWORD: files
+    ports:
+      - "3309:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    tmpfs:
+      - /var/lib/mysql

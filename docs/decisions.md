@@ -1,5 +1,8 @@
 # TheMusicDev/Files — decisions & conversation record
 
+Status: v1.0.0, extracted from its first site (themusicdev.llc) into this repo on 2026-10-03. The decisions below were
+made while building it there; where they mention "the host" they mean any application that installs the plugin.
+
 Rationale that would otherwise be lost when the plugin moves to its own
 repo. Design of record: `docs/file-management-and-uploads.md` (same dir).
 
@@ -18,7 +21,7 @@ plugin, never to its own ad-hoc upload code.
 - **Central `stored_files` ledger**, one row per file forever: opaque
   server-generated `path` (`bin2hex(random_bytes(16))` + extension derived
   from the verified MIME — no client input in paths), persisted
-  `original_filename` (apply.php lost it; we don't), finfo-sniffed `mime`
+  `original_filename` (the site's old upload script lost it; we don't), finfo-sniffed `mime`
   (never client-declared), `size`, indexed `collection`, soft-delete
   `deleted`, timestamps.
 - **`collection` column over tags.** Consumers aggregate files via
@@ -31,9 +34,8 @@ plugin, never to its own ad-hoc upload code.
   touch the filesystem; Files owns lifecycle (trash keeps files, purge
   deletes row + file, purge tolerates an already-missing backend file).
 - **Gated serving, plugin-shipped.** `DlController` streams via the
-  plugin route (`/files/serve/{id}` here); the HOST supplies
-  `Files.authCallable` (a callable on the row; the host app supplies the
-  admin-session check, same as its own gate). Collections with
+  plugin route (`/files/serve/{id}`); the HOST supplies
+  `Files.authCallable` (a callable on the row; for example an admin-session check). Collections with
   `public => true` bypass the gate (reserved for future images; none in
   v1). Attachment disposition uses RFC 5987 `filename*=UTF-8''` with a
   per-char `_` ASCII fallback.
@@ -45,8 +47,8 @@ plugin, never to its own ad-hoc upload code.
   `parent::bootstrap($app)` is only required when a subclass does extra work
   (IdentityBridge pattern, yt-beat-finder).
 - **Soft delete: hand-rolled `deleted` column + `findActive`/`findTrashed`
-  finders. muffin/trash was deferred** (v1 note: recruiter spec said
-  muffin/trash; revisit when Recruiting builds on Files). The API already
+  finders. muffin/trash was deferred** (the first consumer's spec said
+  muffin/trash; revisit if a consumer needs trash behavior beyond the column). The API already
   owns the column writes; behavior wiring gave nothing extra.
 
 ## Rules (override any module's convenience)
@@ -68,7 +70,7 @@ plugin, never to its own ad-hoc upload code.
 
 ## E2E verification at v1 (2026-09-29)
 
-curl over live server: admin login → multipart upload → row + hex-named
+curl over a live server (on the first site): admin login → multipart upload → row + hex-named
 binary under `data/uploads/` → sessioned serve (200, correct MIME, RFC 5987
 disposition, nosniff) → unauth serve 302 → soft delete keeps binary →
 trashed row serves 404. Purge covered by unit tests.
@@ -79,3 +81,9 @@ trashed row serves 404. Purge covered by unit tests.
   fingerprint** (`key . '|' . json_encode($definition)`), so a config
   repoint (tests, hosts) always builds a fresh operator — cache is not keyed
   on the backend key alone.
+
+## Tests (standalone since extraction)
+
+The behavior tests live in this repo (`tests/`, MariaDB on port 3309, a `tests/test_app`): `FileStore::put()` rules,
+soft delete and purge, the serving controller's gate, MIME and headers, the finders, and the config merge. Admin screens
+are the host's, so their tests are too; `examples/` is untested sample code.

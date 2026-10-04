@@ -6,13 +6,12 @@ upload-related ventures in all TheMusicDev projects** — not a feature internal
 to one module. All open decisions below are resolved; this doc is the
 canonical spec, code is the implementation.
 
-First consumer: this app. Next consumer: the Recruiting plugin's applications
-(resume + cover letter, `docs/recruiting-plugin-design.md`); later: portfolio
-images, post cover images, images section, client-site assets.
+First consumer: the first site that used it (themusicdev.llc). Next consumers: a
+recruiting plugin's applications (resume + cover letter); later: portfolio images,
+post cover images, client-site assets.
 
-Source of truth for intake requirements was
-`the-music-dev-monorepo/apps/php-api/api/apply.php` (the one uploads endpoint
-running in production); its design bugs (orphan-creating write order, lost
+Source of truth for intake requirements was the first site's one production upload
+endpoint (a PHP script); its design bugs (orphan-creating write order, lost
 original filename) are deliberately inverted here.
 
 ## 1. Shape
@@ -34,7 +33,7 @@ plugins/TheMusicDev/Files            ← the plugin package (themusicdev/cakephp
   never to disk APIs directly.
 - **Central ledger table `stored_files`** — one row per file that ever enters:
   opaque generated `path` (unique), persisted `original_filename`
-  (apply.php loses it forever; we don't port that), finfo-sniffed `mime`,
+  (the old script loses it forever; we don't port that), finfo-sniffed `mime`,
   `size`, `collection`, timestamps, `trashed` (muffin/trash soft delete).
   Per-column trios on owning tables can't power the browser, lifecycle rules,
   orphan scans, or audits — rejected.
@@ -89,9 +88,9 @@ query.
 
 - Plugin ships the gated serving controller (`DlController`): streams a
   stored file by ledger id — right MIME, `Content-Disposition` filename from
-  persisted `original_filename`. Route lives in host `/files/serve/{id}`.
+  persisted `original_filename`. Route: `/files/serve/{id}`, shipped by the plugin.
 - **Auth seam** (C decision): `Files.authCallable` — the host supplies a
-  callable deciding access (this app: the admin-session check). No host auth
+  callable deciding access (for example an admin-session check). No host auth
   logic inside the plugin. Collections with `public => true` bypass the gate
   (reserved for images; none exist in v1).
 - **Rule stays: serving is always an application route, never disk hrefs.**
@@ -100,7 +99,7 @@ query.
 
 1. **Row-before-file** persistence ordering: validate → persist ledger row →
    store file → done. A failure after the row leaves a visible "file missing"
-   row, never silent orphan binaries (inverts apply.php's order).
+   row, never silent orphan binaries (inverts the old script's order).
 2. **Trash keeps files; purge deletes them.** muffin/trash soft delete on
    `stored_files` leaves the binary in place for restore; a hard purge
    removes row + file.
@@ -112,7 +111,7 @@ query.
 ## 5. Not decided here (belongs to consumer modules)
 
 - Image resizing, CDN prefixing, cache headers for public images.
-- Recruiting's endpoint/form specifics (`docs/recruiting-plugin-design.md`).
+- A consuming module's endpoint/form specifics.
 - Client-site hosting specifics (data dir path, backup cadence).
 - Orphan-scan maintenance command (decision D): documented now, built with
   the second consumer + real data.

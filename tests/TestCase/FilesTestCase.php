@@ -8,6 +8,7 @@ use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
 use Laminas\Diactoros\UploadedFile;
 use League\Flysystem\Local\LocalFilesystemAdapter;
+use ReflectionClass;
 use TheMusicDev\Files\Lib\FileStore;
 
 /**
@@ -68,6 +69,12 @@ abstract class FilesTestCase extends TestCase
         rewind($stream);
 
         return new UploadedFile($stream, strlen($contents), UPLOAD_ERR_OK, $name, 'application/pdf');
+    }
+
+    /** Read a private/protected property (S3 adapter wiring assertions). */
+    protected function property(object $object, string $name): mixed
+    {
+        return (new ReflectionClass($object))->getProperty($name)->getValue($object);
     }
 
     /**

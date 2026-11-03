@@ -59,9 +59,38 @@ what it differs on. Put yours in `config/app.php` under `Files`:
 | Key | Default | Meaning |
 |---|---|---|
 | `backend` | `local` | Which entry of `backends` is active. |
-| `backends` | `local` at `ROOT/data/uploads` | Flysystem adapters: `class` plus the arguments that adapter needs. Only the local adapter is wired to its arguments today; another adapter needs a small change in `FileStore::adapterArgs()` (see the decisions doc). The local root is created on first run. |
+| `backends` | `local` at `ROOT/data/uploads` | Flysystem adapters: `class` plus the arguments that adapter needs. The local adapter and the S3 adapter (`league/flysystem-aws-s3-v3`) are wired to their arguments; any other adapter needs a small change in `FileStore::adapterArgs()`. The local root is created on first run. |
 | `collections` | `uploads.misc` (25 MB, any type) | Your collections are added beside the built-in one; redefine `uploads.misc` to change it. |
 | `authCallable` | `null` | The serve gate. `null` means **nothing is served** (403). |
+
+#### S3 (and any S3-compatible object store)
+
+The package is **not** shipped as a dependency — run
+`composer require league/flysystem-aws-s3-v3` in your app first, then:
+
+```php
+'Files' => [
+    'backend' => 's3',
+    'backends' => [
+        's3' => [
+            'class' => \League\Flysystem\AwsS3V3\AwsS3V3Adapter::class,
+            'bucket' => env('FILES_S3_BUCKET'),
+            'prefix' => env('FILES_S3_PREFIX', ''),
+            'region' => env('FILES_S3_REGION'),
+            'key' => env('FILES_S3_KEY'),
+            'secret' => env('FILES_S3_SECRET'),
+            // Any S3-compatible store (MinIO, R2, Spaces, …):
+            // 'endpoint' => 'http://127.0.0.1:9000',
+            // 'pathStyle' => true,
+        ],
+    ],
+],
+```
+
+Without the flysystem-s3 package installed, selecting an S3 backend throws a
+`FileStoreException` naming the package to install (instead of a fatal
+error). Nothing about the ledger, collections or serve gate changes with the
+backend.
 
 ### The serve gate (`Files.authCallable`)
 

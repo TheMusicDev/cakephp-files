@@ -5,10 +5,13 @@ namespace TheMusicDev\Files\Test\TestCase\Lib;
 
 use Cake\Core\Configure;
 use Laminas\Diactoros\UploadedFile;
+use League\Flysystem\AwsS3V3\AwsS3V3Adapter;
+use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use TheMusicDev\Files\Lib\FileStore;
 use TheMusicDev\Files\Lib\FileStoreException;
 use TheMusicDev\Files\Model\Entity\StoredFile;
+use TheMusicDev\Files\Test\Stub\FakeS3Client;
 use TheMusicDev\Files\Test\TestCase\FilesTestCase;
 
 /**
@@ -188,6 +191,72 @@ final class FileStoreTest extends FilesTestCase
 
         $this->expectException(FileStoreException::class);
         (new FileStore())->filesystem();
+    }
+
+    public function testTheS3BackendIsBuiltFromConfig(): void
+    {
+        Configure::write('Files.backends.s3', [
+            'class' => AwsS3V3Adapter::class,
+            'bucket' => 'my-bucket',
+            'prefix' => 'ledger/',
+            'region' => 'us-west-2',
+            'key' => 'AKIAEXAMPLE',
+            'secret' => 'shh',
+        ]);
+        Configure::write('Files.backend', 's3');
+
+        $filesystem = (new FileStore())->filesystem();
+        $adapter = $this->property($filesystem, 'adapter');
+        $this->assertInstanceOf(AwsS3V3Adapter::class, $adapter);
+        $this->assertSame('my-bucket', $this->property($adapter, 'bucket'));
+        /** @var \League\Flysystem\PathPrefixer $prefixer */
+        $prefixer = $this->property($adapter, 'prefixer');
+        $this->assertSame('ledger/what.pdf', $prefixer->prefixPath('what.pdf'));
+        /** @var \Aws\S3\S3Client $client */
+        $client = $this->property($adapter, 'client');
+        $this->assertSame('us-west-2', $client->getRegion());
+    }
+
+    public function testTheS3BackendPassesEndpointAndPathStyle(): void
+    {
+        Configure::write('Files.backends.minio', [
+            'class' => AwsS3V3Adapter::class,
+            'bucket' => 'files',
+            'region' => 'us-east-1',
+            'key' => 'minioadmin',
+            'secret' => 'minioadmin',
+            'endpoint' => 'http://127.0.0.1:9000',
+            'pathStyle' => true,
+        ]);
+        Configure::write('Files.backend', 'minio');
+
+        $filesystem = (new FileStore())->filesystem();
+        /** @var \Aws\S3\S3Client $client */
+        $client = $this->property($this->property($filesystem, 'adapter'), 'client');
+        $this->assertSame('127.0.0.1', $client->getEndpoint()->getHost());
+        $this->assertSame(9000, $client->getEndpoint()->getPort());
+        $this->assertTrue($client->getConfig('use_path_style_endpoint'));
+    }
+
+    public function testTheS3LifecycleWorksThroughTheSeam(): void
+    {
+        $fake = new FakeS3Client();
+        $store = new FileStore(new Filesystem(new AwsS3V3Adapter($fake, 'test-bucket', 'ledger/')));
+
+        $row = $store->put($this->upload("%PDF-1.4\n%\xe2\xe3\xcf\xd3\ns3 round trip\n"), 'uploads.misc');
+        $this->assertTrue($store->exists($row));
+        $this->assertSame("%PDF-1.4\n%\xe2\xe3\xcf\xd3\ns3 round trip\n", $store->read($row));
+        $this->assertCount(1, $fake->objects);
+        $this->assertArrayHasKey('test-bucket/ledger/' . $row->get('path'), $fake->objects);
+
+        $store->delete($row); // trash keeps the binary
+        $this->assertTrue($store->filesystem()->has((string)$row->get('path')));
+
+        /** @var \TheMusicDev\Files\Model\Entity\StoredFile $trashed */
+        $trashed = $store->storedFiles()->find('trashed')->where(['id' => $row->get('id')])->firstOrFail();
+        $store->purge($trashed);
+        $this->assertSame([], $fake->objects);
+        $this->assertNull($store->storedFiles()->find()->where(['id' => $row->get('id')])->first());
     }
 
     public function testInstanceIsShared(): void

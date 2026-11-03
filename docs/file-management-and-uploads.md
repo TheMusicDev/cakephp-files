@@ -77,6 +77,16 @@ query.
 ],
 ```
 
+- **S3 is wired** (`FileStore::adapterArgs()`): config `class =>
+  AwsS3V3Adapter` plus `bucket`, `prefix`, `region`, `key`, `secret` and
+  optional `endpoint` / `pathStyle` (MinIO, R2, Spaces all need those two).
+  The SDK package stays **suggest**-only: consumer declares
+  `composer require league/flysystem-aws-s3-v3`; an S3 backend chosen
+  without it gives a `FileStoreException` naming the package, not a fatal.
+  Serving, ledger, collections and the auth seam are untouched by backend
+  choice. Arguments are positional (`client, bucket, prefix`) because
+  `filesystem()` spreads `array_values()`.
+
 - Consumer **integration**: other plugins never touch the filesystem. They
   register collections in their own config contribution and call
   `FileStore::put($upload, $collection)` → ledger row back; they keep only

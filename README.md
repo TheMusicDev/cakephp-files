@@ -92,6 +92,24 @@ Without the flysystem-s3 package installed, selecting an S3 backend throws a
 error). Nothing about the ledger, collections or serve gate changes with the
 backend.
 
+#### Opt-in integration test against a real server
+
+The fake-client tests stay hermetic; a real round-trip (`put` → `exists` →
+`read` → `purge`) runs only when you ask for it, against any S3-compatible
+server (RustFS, MinIO, AWS, …):
+
+```sh
+docker run --rm -d --name rustfs-test -p 9009:9000 \
+  -e RUSTFS_ACCESS_KEY=files-test -e RUSTFS_SECRET_KEY=files-test-secret \
+  rustfs/rustfs:latest /data
+S3_TEST_ENDPOINT=http://127.0.0.1:9009 vendor/bin/phpunit --group s3-integration
+docker rm -f rustfs-test
+```
+
+Without `S3_TEST_ENDPOINT` the group skips itself; CI never starts a server.
+`S3_TEST_KEY` / `S3_TEST_SECRET` / `S3_TEST_BUCKET` / `S3_TEST_REGION` /
+`S3_TEST_PATH_STYLE` override the defaults for other endpoints.
+
 ### The serve gate (`Files.authCallable`)
 
 `GET /files/serve/{id}` calls `authCallable($file)` with the ledger row before it reads a byte. The plugin has no

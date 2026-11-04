@@ -3,11 +3,13 @@ declare(strict_types=1);
 
 namespace TheMusicDev\Files\Lib;
 
+use Aws\S3\S3Client;
 use Cake\Core\Configure;
 use Cake\Datasource\FactoryLocator;
 use Cake\Log\Log;
 use DateTime;
 use finfo;
+use League\Flysystem\AwsS3V3\AwsS3V3Adapter;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemOperator;
 use League\Flysystem\Local\LocalFilesystemAdapter;
@@ -34,6 +36,20 @@ final class FileStore
     private ?FilesystemOperator $filesystem = null;
 
     private ?string $backendKey = null;
+
+    private bool $pinned = false;
+
+    /**
+     * $filesystem pins the operator (tests inject one around a fake S3
+     * client); omit it and the active backend is resolved from config.
+     */
+    public function __construct(?FilesystemOperator $filesystem = null)
+    {
+        if ($filesystem !== null) {
+            $this->filesystem = $filesystem;
+            $this->pinned = true;
+        }
+    }
 
     /** Shared handle for controllers/consumers that don't build their own. */
     public static function instance(): self
@@ -65,6 +81,10 @@ final class FileStore
     /** The active backend, resolved + cached (re-resolved if Files.backend changes). */
     public function filesystem(): FilesystemOperator
     {
+        if ($this->pinned && $this->filesystem !== null) {
+            return $this->filesystem;
+        }
+
         $key = (string)Configure::read('Files.backend');
         $definition = (array)Configure::read('Files.backends.' . $key, []);
         // Cache the operator per backend *definition*, not per key — hosts
@@ -88,10 +108,11 @@ final class FileStore
     }
 
     /**
-     * Named args for known adapter classes.
+     * Named args for known adapter classes (positional: filesystem()
+     * discards the keys when spreading).
      *
      * @param array<string, mixed> $definition
-     * @return array<string, mixed>
+     * @return array<int|string, mixed>
      */
     private function adapterArgs(string $adapterClass, array $definition): array
     {
@@ -99,7 +120,36 @@ final class FileStore
             return ['root' => (string)($definition['root'] ?? (ROOT . DS . 'data' . DS . 'uploads'))];
         }
 
-        return []; // ponytail: remote adapters get their args when one is actually used
+        if ($adapterClass === AwsS3V3Adapter::class) {
+            if (!class_exists(S3Client::class)) {
+                throw new FileStoreException(
+                    'The S3 backend needs league/flysystem-aws-s3-v3: "composer require league/flysystem-aws-s3-v3".',
+                );
+            }
+
+            // Args are positional (filesystem() spreads array_values): client, bucket, prefix.
+            $options = [
+                'region' => (string)($definition['region'] ?? ''),
+                'credentials' => [
+                    'key' => (string)($definition['key'] ?? ''),
+                    'secret' => (string)($definition['secret'] ?? ''),
+                ],
+            ];
+            if (($definition['endpoint'] ?? '') !== '') {
+                $options['endpoint'] = (string)$definition['endpoint'];
+            }
+            if (!empty($definition['pathStyle'])) {
+                $options['use_path_style_endpoint'] = true;
+            }
+
+            return [
+                new S3Client($options),
+                (string)($definition['bucket'] ?? ''),
+                (string)($definition['prefix'] ?? ''),
+            ];
+        }
+
+        return [];
     }
 
     /**

@@ -59,9 +59,56 @@ what it differs on. Put yours in `config/app.php` under `Files`:
 | Key | Default | Meaning |
 |---|---|---|
 | `backend` | `local` | Which entry of `backends` is active. |
-| `backends` | `local` at `ROOT/data/uploads` | Flysystem adapters: `class` plus the arguments that adapter needs. Only the local adapter is wired to its arguments today; another adapter needs a small change in `FileStore::adapterArgs()` (see the decisions doc). The local root is created on first run. |
+| `backends` | `local` at `ROOT/data/uploads` | Flysystem adapters: `class` plus the arguments that adapter needs. The local adapter and the S3 adapter (`league/flysystem-aws-s3-v3`) are wired to their arguments; any other adapter needs a small change in `FileStore::adapterArgs()`. The local root is created on first run. |
 | `collections` | `uploads.misc` (25 MB, any type) | Your collections are added beside the built-in one; redefine `uploads.misc` to change it. |
 | `authCallable` | `null` | The serve gate. `null` means **nothing is served** (403). |
+
+#### S3 (and any S3-compatible object store)
+
+The package is **not** shipped as a dependency — run
+`composer require league/flysystem-aws-s3-v3` in your app first, then:
+
+```php
+'Files' => [
+    'backend' => 's3',
+    'backends' => [
+        's3' => [
+            'class' => \League\Flysystem\AwsS3V3\AwsS3V3Adapter::class,
+            'bucket' => env('FILES_S3_BUCKET'),
+            'prefix' => env('FILES_S3_PREFIX', ''),
+            'region' => env('FILES_S3_REGION'),
+            'key' => env('FILES_S3_KEY'),
+            'secret' => env('FILES_S3_SECRET'),
+            // Any S3-compatible store (MinIO, R2, Spaces, …):
+            // 'endpoint' => 'http://127.0.0.1:9000',
+            // 'pathStyle' => true,
+        ],
+    ],
+],
+```
+
+Without the flysystem-s3 package installed, selecting an S3 backend throws a
+`FileStoreException` naming the package to install (instead of a fatal
+error). Nothing about the ledger, collections or serve gate changes with the
+backend.
+
+#### Opt-in integration test against a real server
+
+The fake-client tests stay hermetic; a real round-trip (`put` → `exists` →
+`read` → `purge`) runs only when you ask for it, against any S3-compatible
+server (RustFS, MinIO, AWS, …):
+
+```sh
+docker run --rm -d --name rustfs-test -p 9009:9000 \
+  -e RUSTFS_ACCESS_KEY=files-test -e RUSTFS_SECRET_KEY=files-test-secret \
+  rustfs/rustfs:latest /data
+S3_TEST_ENDPOINT=http://127.0.0.1:9009 vendor/bin/phpunit --group s3-integration
+docker rm -f rustfs-test
+```
+
+Without `S3_TEST_ENDPOINT` the group skips itself; CI never starts a server.
+`S3_TEST_KEY` / `S3_TEST_SECRET` / `S3_TEST_BUCKET` / `S3_TEST_REGION` /
+`S3_TEST_PATH_STYLE` override the defaults for other endpoints.
 
 ### The serve gate (`Files.authCallable`)
 
